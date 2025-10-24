@@ -101,22 +101,22 @@ export const getAIBudgetRecommendations = async (req, res) => {
         const averageMonthlySpending = totalSpent / 3;
 
         // Create budget recommendation prompt
-        const prompt = `
-        Based on the following financial data, provide personalized budget recommendations:
+        // const prompt = `
+        // Based on the following financial data, provide personalized budget recommendations:
 
-        Monthly Income: ${monthlyIncome}
-        Average Monthly Spending: ${averageMonthlySpending.toFixed(2)}
-        Category Breakdown: ${JSON.stringify(categoryBreakdown, null, 2)}
+        // Monthly Income: ${monthlyIncome}
+        // Average Monthly Spending: ${averageMonthlySpending.toFixed(2)}
+        // Category Breakdown: ${JSON.stringify(categoryBreakdown, null, 2)}
 
-        Please provide:
-        1. Recommended budget allocation (50/30/20 rule or similar)
-        2. Category-specific budget limits
-        3. Savings recommendations
-        4. Areas to reduce spending
-        5. Emergency fund target
+        // Please provide:
+        // 1. Recommended budget allocation (50/30/20 rule or similar)
+        // 2. Category-specific budget limits
+        // 3. Savings recommendations
+        // 4. Areas to reduce spending
+        // 5. Emergency fund target
 
-        Format as JSON with clear sections.
-        `;
+        // Format as JSON with clear sections.
+        // `;
 
         // For now, return a structured response (you can integrate with Gemini here)
         const recommendations = {
