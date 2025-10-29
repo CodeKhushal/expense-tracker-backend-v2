@@ -12,8 +12,8 @@ dotenv.config({});
 const app = express();
 const PORT = process.env.PORT || 3000;
 const whitelist = [
+  "https://kexptrack-v2.vercel.app",
   "http://localhost:5173",
-  "https://kexptrack-v2.vercel.app/",
 ];
 
 // middleware
