@@ -13,8 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const whitelist = [
   "http://localhost:5173",
-  "https://kexptrack.vercel.app",
-  "https://expense-tracker-frontend-seven-alpha.vercel.app",
+  "https://kexptrack-v2.vercel.app/",
 ];
 
 // middleware
