@@ -179,8 +179,8 @@ ${JSON.stringify(stats.normalized, null, 2)}
 Return a JSON object with:
 {
   "topCategory": "category with highest spending",
-  "totalSpent": "total amount spent",
-  "averageTransaction": "average transaction amount",
+  "totalSpent": "total amount spent in ruppees",
+  "averageTransaction": "average transaction amount in ruppees",
   "spendingTrend": "increasing/decreasing/stable",
   "quickTip": "one actionable tip",
   "riskLevel": "low/medium/high"
