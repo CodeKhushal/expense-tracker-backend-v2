@@ -104,7 +104,7 @@ Suggested actions: Review top spending categories (${
     }
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3.1-flash-lite-preview",
     });
 
     const expenseData = stats.normalized.map((e) => ({
