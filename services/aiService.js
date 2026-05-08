@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || null;
+
 let genAI = null;
 
 if (GEMINI_KEY) {
@@ -19,88 +20,148 @@ if (GEMINI_KEY) {
   );
 }
 
-// Helper: compute basic deterministic stats (works without external AI)
-const computeBasicStats = (expenses) => {
-  const normalized = (expenses || []).map((e) => ({
-    description: e.description,
+// -------------------------
+// Helper Functions
+// -------------------------
+
+const computeBasicStats = (expenses = []) => {
+  const normalized = expenses.map((e) => ({
+    description: e.description || "No description",
     amount: Number(e.amount || 0),
     category: e.category || "others",
     date: e.createdAt || e.date || null,
   }));
 
-  const totalAmount = normalized.reduce((s, e) => s + e.amount, 0);
-  const avg = normalized.length ? totalAmount / normalized.length : 0;
+  const totalAmount = normalized.reduce((sum, e) => sum + e.amount, 0);
+
+  const averageTransaction =
+    normalized.length > 0
+      ? Number((totalAmount / normalized.length).toFixed(2))
+      : 0;
+
   const categoryBreakdown = normalized.reduce((acc, e) => {
     acc[e.category] = (acc[e.category] || 0) + e.amount;
     return acc;
   }, {});
+
   const topCategory =
     Object.keys(categoryBreakdown).sort(
       (a, b) => categoryBreakdown[b] - categoryBreakdown[a]
     )[0] || null;
 
-  // naive trend detection (compare first third vs last third)
-  let trend = "stable";
-  const n = normalized.length;
-  if (n >= 3) {
-    const third = Math.max(1, Math.floor(n / 3));
+  // Basic spending trend
+  let spendingTrend = "stable";
+
+  if (normalized.length >= 3) {
+    const third = Math.max(1, Math.floor(normalized.length / 3));
+
     const firstSum = normalized
       .slice(0, third)
-      .reduce((s, e) => s + e.amount, 0);
-    const lastSum = normalized.slice(-third).reduce((s, e) => s + e.amount, 0);
-    if (lastSum > firstSum * 1.05) trend = "increasing";
-    else if (lastSum < firstSum * 0.95) trend = "decreasing";
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    const lastSum = normalized
+      .slice(-third)
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    if (lastSum > firstSum * 1.05) {
+      spendingTrend = "increasing";
+    } else if (lastSum < firstSum * 0.95) {
+      spendingTrend = "decreasing";
+    }
   }
 
   const riskLevel =
-    totalAmount > 2000 ? "high" : totalAmount > 800 ? "medium" : "low";
+    totalAmount > 2000
+      ? "high"
+      : totalAmount > 800
+      ? "medium"
+      : "low";
 
   return {
     normalized,
     totalAmount,
-    averageTransaction: Math.round(avg * 100) / 100,
-    topCategory,
-    spendingTrend: trend,
+    averageTransaction,
     categoryBreakdown,
+    topCategory,
+    spendingTrend,
     riskLevel,
   };
 };
 
-const safeExtractText = (result) => {
-  // Attempt common shapes; log for debugging if unexpected
-  if (!result) return "";
-  // result.response?.text could be a function or string
+const extractTextFromResponse = async (result) => {
   try {
-    if (result.response && typeof result.response.text === "function") {
-      return result.response.text();
+    if (!result) return "";
+
+    // Latest Gemini SDK response handling
+    if (result.response) {
+      const response = await result.response;
+
+      if (typeof response.text === "function") {
+        return response.text();
+      }
+
+      if (typeof response.text === "string") {
+        return response.text;
+      }
     }
-    if (result.response && typeof result.response.text === "string") {
-      return result.response.text;
-    }
+
+    // Fallbacks
     if (typeof result.text === "string") {
       return result.text;
     }
+
     return JSON.stringify(result);
   } catch (err) {
-    console.warn("Failed to extract text from AI result:", err, result);
-    return JSON.stringify(result);
+    console.error("Failed to extract Gemini response text:", err);
+    return "";
   }
 };
 
-export const analyzeExpenses = async (expenses) => {
+const cleanJsonResponse = (text) => {
+  try {
+    // Remove markdown formatting
+    const cleaned = text
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+
+    // Extract first JSON object
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      throw new Error("No valid JSON found");
+    }
+
+    return JSON.parse(jsonMatch[0]);
+  } catch (err) {
+    console.error("JSON parsing error:", err);
+    return null;
+  }
+};
+
+// -------------------------
+// Expense Analysis
+// -------------------------
+
+export const analyzeExpenses = async (expenses = []) => {
   try {
     const stats = computeBasicStats(expenses);
 
-    // If no AI client, return deterministic analysis
+    // Fallback if AI unavailable
     if (!genAI) {
-      const analysis = `Total spent: ${stats.totalAmount}
-Top category: ${stats.topCategory || "N/A"}
-Average transaction: ${stats.averageTransaction}
+      return `
+Expense Analysis Summary
+
+Total Spent: ₹${stats.totalAmount}
+Top Category: ${stats.topCategory || "N/A"}
+Average Transaction: ₹${stats.averageTransaction}
 Trend: ${stats.spendingTrend}
-Suggested actions: Review top spending categories (${
-        stats.topCategory || "N/A"
-      }) and reduce non-essential spending.`;
-      return analysis;
+
+Suggestions:
+- Review spending in ${stats.topCategory || "high-cost categories"}
+- Reduce non-essential purchases
+- Track weekly expenses consistently
+      `;
     }
 
     const model = genAI.getGenerativeModel({
@@ -115,108 +176,138 @@ Suggested actions: Review top spending categories (${
     }));
 
     const prompt = `
-As a financial advisor, analyze the following expense data and provide personalized advice to help the user save money and manage their expenses more efficiently.
+You are a financial advisor.
+
+Analyze the following expense data and provide practical financial advice.
 
 Expense Data:
 ${JSON.stringify(expenseData, null, 2)}
 
 Summary:
-- Total Expenses: ${stats.totalAmount}
+- Total Expenses: ₹${stats.totalAmount}
 - Number of Transactions: ${expenseData.length}
-- Category Breakdown: ${JSON.stringify(stats.categoryBreakdown, null, 2)}
+- Category Breakdown:
+${JSON.stringify(stats.categoryBreakdown, null, 2)}
 
-Please provide:
-1. Spending Analysis: Identify patterns and potential areas of concern
-2. Budget Recommendations: Suggest realistic budget allocations for each category
-3. Money-Saving Tips: Provide specific, actionable advice based on their spending patterns
-4. Financial Goals: Suggest short-term and long-term financial goals
-5. Emergency Fund: Advice on building and maintaining an emergency fund
-6. Investment Opportunities: Basic investment advice if applicable
+Provide:
 
-Format the response in a structured, easy-to-read manner with clear sections and actionable steps.
-Keep the tone friendly and encouraging.
-        `;
+1. Spending Analysis
+2. Budget Recommendations
+3. Money Saving Tips
+4. Financial Goals
+5. Emergency Fund Advice
+6. Basic Investment Suggestions
+
+Keep the response:
+- Friendly
+- Actionable
+- Well-structured
+- Easy to read
+`;
 
     const result = await model.generateContent(prompt);
-    // debug log to inspect shape if issues arise
-    // console.debug("AI analyze result:", result);
-    const text = safeExtractText(result);
-    return text;
+
+    const text = await extractTextFromResponse(result);
+
+    return text || "Unable to generate AI analysis.";
   } catch (error) {
     console.error("AI Analysis Error:", error);
-    // fallback deterministic response so endpoints don't 500
+
     const stats = computeBasicStats(expenses);
-    return `AI unavailable — fallback analysis:
-Total: ${stats.totalAmount}, Top category: ${
-      stats.topCategory || "N/A"
-    }, Avg: ${stats.averageTransaction}, Trend: ${stats.spendingTrend}`;
+
+    return `
+AI unavailable — fallback analysis
+
+Total Spent: ₹${stats.totalAmount}
+Top Category: ${stats.topCategory || "N/A"}
+Average Transaction: ₹${stats.averageTransaction}
+Trend: ${stats.spendingTrend}
+Risk Level: ${stats.riskLevel}
+    `;
   }
 };
 
-export const getExpenseInsights = async (expenses) => {
+// -------------------------
+// Quick Insights
+// -------------------------
+
+export const getExpenseInsights = async (expenses = []) => {
   try {
     const stats = computeBasicStats(expenses);
 
+    // Fallback if Gemini unavailable
     if (!genAI) {
       return {
         topCategory: stats.topCategory,
         totalSpent: stats.totalAmount,
         averageTransaction: stats.averageTransaction,
         spendingTrend: stats.spendingTrend,
-        quickTip: `Consider reducing expenses in ${
+        quickTip: `Try reducing spending in ${
           stats.topCategory || "high-cost categories"
-        } by 10%`,
+        } by 10%.`,
         riskLevel: stats.riskLevel,
       };
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({
+      model: "gemini-2.5-flash",
+    });
 
     const prompt = `
-Analyze these expenses and provide quick insights in JSON format:
+Analyze the following expenses and return ONLY valid JSON.
+
+Expenses:
 ${JSON.stringify(stats.normalized, null, 2)}
 
-Return a JSON object with:
+Return this exact structure:
+
 {
-  "topCategory": "category with highest spending",
-  "totalSpent": "total amount spent in ruppees",
-  "averageTransaction": "average transaction amount in ruppees",
+  "topCategory": "category name",
+  "totalSpent": number,
+  "averageTransaction": number,
   "spendingTrend": "increasing/decreasing/stable",
-  "quickTip": "one actionable tip",
+  "quickTip": "short actionable tip",
   "riskLevel": "low/medium/high"
 }
-        `;
+
+Do not include markdown.
+Do not include explanation text.
+`;
 
     const result = await model.generateContent(prompt);
-    // console.debug("AI insights result:", result);
-    const text = safeExtractText(result);
-    try {
-      return JSON.parse(text);
-    } catch (parseError) {
-      // fallback structured response
-      return {
-        topCategory: stats.topCategory,
-        totalSpent: stats.totalAmount,
-        averageTransaction: stats.averageTransaction,
-        spendingTrend: stats.spendingTrend,
-        quickTip: `Consider tracking and reducing ${
-          stats.topCategory || "high-cost categories"
-        } spending.`,
-        riskLevel: stats.riskLevel,
-      };
+
+    const text = await extractTextFromResponse(result);
+
+    const parsed = cleanJsonResponse(text);
+
+    if (parsed) {
+      return parsed;
     }
-  } catch (error) {
-    console.error("AI Insights Error:", error);
-    // fallback deterministic insights
-    const stats = computeBasicStats(expenses);
+
+    // Backup fallback
     return {
       topCategory: stats.topCategory,
       totalSpent: stats.totalAmount,
       averageTransaction: stats.averageTransaction,
       spendingTrend: stats.spendingTrend,
-      quickTip: `Consider tracking and reducing ${
+      quickTip: `Track and reduce spending in ${
         stats.topCategory || "high-cost categories"
-      } spending.`,
+      }.`,
+      riskLevel: stats.riskLevel,
+    };
+  } catch (error) {
+    console.error("AI Insights Error:", error);
+
+    const stats = computeBasicStats(expenses);
+
+    return {
+      topCategory: stats.topCategory,
+      totalSpent: stats.totalAmount,
+      averageTransaction: stats.averageTransaction,
+      spendingTrend: stats.spendingTrend,
+      quickTip: `Track and reduce spending in ${
+        stats.topCategory || "high-cost categories"
+      }.`,
       riskLevel: stats.riskLevel,
     };
   }
