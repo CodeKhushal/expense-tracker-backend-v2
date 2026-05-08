@@ -104,7 +104,7 @@ Suggested actions: Review top spending categories (${
     }
 
     const model = genAI.getGenerativeModel({
-      model: "gemini-3-flash-preview",
+      model: "gemini-2.5-flash",
     });
 
     const expenseData = stats.normalized.map((e) => ({
@@ -170,7 +170,7 @@ export const getExpenseInsights = async (expenses) => {
       };
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
     const prompt = `
 Analyze these expenses and provide quick insights in JSON format:
